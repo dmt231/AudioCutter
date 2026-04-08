@@ -13,6 +13,7 @@ import com.example.audiocutterdemo.core.file_manager.IFileManager
 import com.example.audiocutterdemo2.core.file_manager.data.AudioFile
 import com.example.audiocutterdemo2.core.ffmpeg.DecoderManager
 import com.example.audiocutterdemo2.core.file_manager.data.TrimMode
+import com.example.audiocutterdemo2.permission.PermissionChecker
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +22,8 @@ import kotlinx.coroutines.launch
 
 class MainViewModel(
     private val fileManager: IFileManager,
-    private val decoderManager: DecoderManager
+    private val decoderManager: DecoderManager,
+    private val permissionChecker: PermissionChecker,
 ) : ViewModel() {
     private val _selectedFile = MutableStateFlow<AudioFile?>(null)
     val selectedFile = _selectedFile.asStateFlow()
@@ -36,6 +38,9 @@ class MainViewModel(
 
     private val _navigationEvent = Channel<Boolean>(Channel.BUFFERED)
     val navigationEvent = _navigationEvent.receiveAsFlow()
+
+    private val _permissionRequestEvent = Channel<String>(Channel.BUFFERED)
+    val permissionRequestEvent = _permissionRequestEvent.receiveAsFlow()
 
     init {
         viewModelScope.launch {
@@ -52,7 +57,24 @@ class MainViewModel(
     }
 
     fun onPickFileClick() {
-        viewModelScope.launch { _navigationEvent.send(true) }
+        viewModelScope.launch {
+            val requiredPermission = permissionChecker.getRequiredAudioPermission()
+            if (permissionChecker.hasAudioPermission()) {
+                Log.d("mtd", "onPickFileClick: have permission")
+                _navigationEvent.send(true)
+            } else {
+                Log.d("mtd", "onPickFileClick: not have permission")
+                _permissionRequestEvent.send(requiredPermission)
+            }
+        }
+    }
+
+    fun onPermissionResult(isGranted: Boolean) {
+        if (isGranted) {
+            viewModelScope.launch { _navigationEvent.send(true) }
+        } else {
+            Log.d("MainViewModel", "Permission denied by user")
+        }
     }
 
     fun pickFiles(activity: ComponentActivity) {
