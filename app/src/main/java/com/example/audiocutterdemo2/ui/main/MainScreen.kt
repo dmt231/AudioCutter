@@ -74,7 +74,6 @@ fun MainScreen(viewModel: MainViewModel = koinViewModel()) {
             if (viewModel.isDecoding) {
                 CircularProgressIndicator()
             } else if (amplitudes.isNotEmpty()) {
-                // Waveform + 2 handle
                 WaveformRangeSelector(
                     amplitudes = amplitudes,
                     totalDurationMs = selectedFile!!.duration,
@@ -88,7 +87,6 @@ fun MainScreen(viewModel: MainViewModel = koinViewModel()) {
 
             Spacer(Modifier.height(16.dp))
 
-            // Toggle trim mode
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
                     selected = viewModel.trimMode == TrimMode.TRIM_SIDE,
@@ -105,7 +103,6 @@ fun MainScreen(viewModel: MainViewModel = koinViewModel()) {
             Spacer(Modifier.height(16.dp))
 
             Button(onClick = {
-                //Cutting
                 //TODO
                 Log.d("mtd", "MainScreen: leftStart : ${viewModel.handleLMs} endTime : ${viewModel.handleRMs}")
             }) {

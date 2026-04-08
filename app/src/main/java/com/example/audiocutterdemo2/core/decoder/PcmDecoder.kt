@@ -23,26 +23,35 @@ class PcmDecoder {
             extractor.getTrackFormat(index)
                 .getString(MediaFormat.KEY_MIME)
                 ?.startsWith("audio/") == true
-        } ?: run {
-            extractor.release()
-            return@withContext emptyList()
-        }
+        } ?: run { extractor.release(); return@withContext emptyList() }
 
         extractor.selectTrack(trackIndex)
         val format = extractor.getTrackFormat(trackIndex)
-        val mime = format.getString(MediaFormat.KEY_MIME) ?: run {
-            extractor.release()
-            return@withContext emptyList()
-        }
+        val mime = format.getString(MediaFormat.KEY_MIME)
+            ?: run { extractor.release(); return@withContext emptyList() }
+
+        val durationUs = format.getLong(MediaFormat.KEY_DURATION)
+
+        val sampleRate = if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE))
+            format.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44100
+        val channelCount = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
+            format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 1
+
+        val totalSamplesEstimate = ((durationUs / 1_000_000f) * sampleRate).toLong()
+        val chunkSize = ((totalSamplesEstimate / channelCount) / targetBars)
+            .coerceAtLeast(1).toInt()
 
         val codec = MediaCodec.createDecoderByType(mime)
         codec.configure(format, null, null, 0)
         codec.start()
 
-        val rawSamples = mutableListOf<Short>()
-        val bufferInfo = MediaCodec.BufferInfo()
-        var inputDone  = false
-        var outputDone = false
+        val rawResult    = mutableListOf<Int>()
+        val bufferInfo   = MediaCodec.BufferInfo()
+        var inputDone    = false
+        var outputDone   = false
+        var chunkMax     = 0
+        var chunkCount   = 0
+        var chunkSum = 0L
 
         while (!outputDone) {
             if (!inputDone) {
@@ -51,16 +60,12 @@ class PcmDecoder {
                     val buf  = codec.getInputBuffer(inputIdx)!!
                     val size = extractor.readSampleData(buf, 0)
                     if (size < 0) {
-                        codec.queueInputBuffer(
-                            inputIdx, 0, 0, 0,
-                            MediaCodec.BUFFER_FLAG_END_OF_STREAM
-                        )
+                        codec.queueInputBuffer(inputIdx, 0, 0, 0,
+                            MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                         inputDone = true
                     } else {
-                        codec.queueInputBuffer(
-                            inputIdx, 0, size,
-                            extractor.sampleTime, 0
-                        )
+                        codec.queueInputBuffer(inputIdx, 0, size,
+                            extractor.sampleTime, 0)
                         extractor.advance()
                     }
                 }
@@ -68,13 +73,32 @@ class PcmDecoder {
 
             val outputIdx = codec.dequeueOutputBuffer(bufferInfo, 10_000)
             if (outputIdx >= 0) {
-                val buf    = codec.getOutputBuffer(outputIdx)!!
-                val shorts = ShortArray(buf.remaining() / 2)
-                buf.asShortBuffer().get(shorts)
-                rawSamples.addAll(shorts.toList())
+                val buf = codec.getOutputBuffer(outputIdx)!!
+
+                val shortBuffer = buf.order(java.nio.ByteOrder.nativeOrder()).asShortBuffer()
+
+                while (shortBuffer.hasRemaining()) {
+                    val sample = shortBuffer.get().toInt()
+
+                    chunkSum += kotlin.math.abs(sample)
+                    chunkCount++
+
+                    if (chunkCount >= chunkSize) {
+                        val average = (chunkSum / chunkSize).toInt()
+                        rawResult.add(average)
+
+                        chunkSum = 0L
+                        chunkCount = 0
+                    }
+                }
+
                 codec.releaseOutputBuffer(outputIdx, false)
 
                 if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                    if (chunkCount > 0) {
+                        val average = (chunkSum / chunkCount).toInt()
+                        rawResult.add(average)
+                    }
                     outputDone = true
                 }
             }
@@ -84,14 +108,6 @@ class PcmDecoder {
         codec.release()
         extractor.release()
 
-        if (rawSamples.isEmpty()) return@withContext emptyList()
-
-        val chunkSize = (rawSamples.size / targetBars).coerceAtLeast(1)
-        List(targetBars) { i ->
-            val from = i * chunkSize
-            val to   = minOf(from + chunkSize, rawSamples.size)
-            if (from >= rawSamples.size) 0
-            else rawSamples.subList(from, to).maxOf { kotlin.math.abs(it.toInt()) }
-        }
+        return@withContext rawResult
     }
 }
