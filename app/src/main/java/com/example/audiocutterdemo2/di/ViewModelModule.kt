@@ -4,5 +4,11 @@ import com.example.audiocutterdemo2.ui.main.MainViewModel
 import org.koin.dsl.module
 
 val viewModelModule = module {
-    single { MainViewModel(fileManager = get(), decoderManager = get(), permissionChecker = get()) }
+    single { MainViewModel(
+        application = get(),
+        fileManager = get(),
+        decoderManager = get(),
+        permissionChecker = get(),
+        ffMpegController = get()
+    ) }
 }

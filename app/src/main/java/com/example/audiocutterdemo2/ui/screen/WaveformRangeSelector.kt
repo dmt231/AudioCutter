@@ -1,5 +1,6 @@
 package com.example.audiocutterdemo2.ui.screen
 
+import android.util.Log
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -37,6 +38,7 @@ fun WaveformRangeSelector(
     handleLMs: Long,
     handleRMs: Long,
     trimMode: TrimMode,
+    currentPlaybackMs: Long?,
     onHandleLChange: (Long) -> Unit,
     onHandleRChange: (Long) -> Unit,
     modifier: Modifier = Modifier
@@ -48,16 +50,16 @@ fun WaveformRangeSelector(
     var containerWidthPx by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
 
-    val screenWidthDp  = with(density) {
+    val screenWidthDp = with(density) {
         if (containerWidthPx > 0f) containerWidthPx.toDp() else 300.dp
     }
     val waveformWidthDp = screenWidthDp * zoomScale
 
-    // Waveform màu cố định — KHÔNG phụ thuộc handleLMs/handleRMs
-    // nên sẽ KHÔNG recompose khi kéo handle
     val staticBrush = remember {
         SolidColor(Color(0xFFB89FFF))
     }
+
+    var totalWidthPx by remember { mutableFloatStateOf(0f) }
 
     Column(modifier = modifier.fillMaxWidth()) {
         // Header time
@@ -67,25 +69,33 @@ fun WaveformRangeSelector(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(formatTimeMs(handleLMs), color = Color.White,
-                style = MaterialTheme.typography.bodyMedium)
-            Text("Total: ${formatTimeMs(totalDurationMs)}", color = Color.White,
-                style = MaterialTheme.typography.bodyMedium)
-            Text(formatTimeMs(handleRMs), color = Color.White,
-                style = MaterialTheme.typography.bodyMedium)
+            Text(
+                formatTimeMs(handleLMs),
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                "Total: ${formatTimeMs(totalDurationMs)}",
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                formatTimeMs(handleRMs),
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(200.dp)
+                .height(150.dp)
                 .onSizeChanged { containerWidthPx = it.width.toFloat() }
                 .pointerInput(Unit) {
                     detectTransformGestures { _, _, zoom, _ ->
                         zoomScale = (zoomScale * zoom).coerceIn(1f, 8f)
                     }
-                }
-        ) {
+                }) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
@@ -97,43 +107,50 @@ fun WaveformRangeSelector(
                 Box(
                     modifier = Modifier
                         .width(waveformWidthDp)
-                        .fillMaxHeight(),
-                    contentAlignment = Alignment.Center
+                        .fillMaxHeight()
+                        .onSizeChanged { totalWidthPx = it.width.toFloat() },
+                    contentAlignment = Alignment.CenterStart
                 ) {
 
                     key(amplitudes) {
                         AudioWaveform(
-                            modifier           = Modifier
+                            modifier = Modifier
                                 .fillMaxWidth()
-                                .fillMaxHeight(0.6f),
-                            amplitudes         = amplitudes,
-                            progress           = 0f,
-                            onProgressChange   = {},
-                            waveformBrush      = staticBrush,
-                            spikePadding       = 3.dp,
-                            spikeWidth         = if (zoomScale > 2f) 4.dp else 2.dp,
-                            spikeRadius        = 1.dp,
+                                .fillMaxHeight(1f),
+                            amplitudes = amplitudes,
+                            progress = 0f,
+                            onProgressChange = {},
+                            waveformBrush = staticBrush,
+                            spikePadding = 3.dp,
+                            spikeWidth = if (zoomScale > 2f) 4.dp else 2.dp,
+                            spikeRadius = 1.dp,
                             spikeAnimationSpec = tween(durationMillis = 0)
                         )
                     }
 
-                    // Layer 2: Overlay màu — recompose nhẹ, chỉ vẽ rect đơn giản
                     ColorOverlayCanvas(
-                        modifier        = Modifier
+                        modifier = Modifier
                             .fillMaxWidth()
-                            .fillMaxHeight(0.6f),
+                            .fillMaxHeight(1f),
                         totalDurationMs = totalDurationMs,
-                        handleLMs       = handleLMs,
-                        handleRMs       = handleRMs,
-                        trimMode        = trimMode
+                        handleLMs = handleLMs,
+                        handleRMs = handleRMs,
+                        trimMode = trimMode
                     )
 
-                    // Layer 3: 2 handle
+                    if (currentPlaybackMs != null && currentPlaybackMs in 0..totalDurationMs) {
+                        PlaybackIndicator(
+                            positionMs = currentPlaybackMs,
+                            totalDurationMs = totalDurationMs,
+                            totalWidthPx = totalWidthPx
+                        )
+                    }
+
                     RangeOverlay(
-                        modifier        = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize(),
                         totalDurationMs = totalDurationMs,
-                        handleLMs       = handleLMs,
-                        handleRMs       = handleRMs,
+                        handleLMs = handleLMs,
+                        handleRMs = handleRMs,
                         onHandleLChange = onHandleLChange,
                         onHandleRChange = onHandleRChange
                     )
@@ -165,11 +182,10 @@ fun RangeOverlay(
     val minGapMs = 500L
 
     val selectedOverlayColor = Color.Transparent
-    val unselectedOverlayColor = Color(0xFFB89FFF).copy(alpha = 0.1f)
+    val unselectedOverlayColor = Color.Transparent
 
     Box(
-        modifier = modifier.onSizeChanged { totalWidthPx = it.width.toFloat() }
-    ) {
+        modifier = modifier.onSizeChanged { totalWidthPx = it.width.toFloat() }) {
         if (totalWidthPx > 0f) {
             val leftPx = (handleLMs / totalDurationMs.toFloat()) * totalWidthPx
             val rightPx = (handleRMs / totalDurationMs.toFloat()) * totalWidthPx
@@ -204,11 +220,12 @@ fun RangeOverlay(
             totalWidthPx = totalWidthPx,
             isLeft = true,
             onDrag = { deltaPx ->
-                val newMs = (handleLMs + (deltaPx / totalWidthPx * totalDurationMs).toLong())
-                    .coerceIn(0L, handleRMs - minGapMs)
+                val newMs =
+                    (handleLMs + (deltaPx / totalWidthPx * totalDurationMs).toLong()).coerceIn(
+                        0L, handleRMs - minGapMs
+                    )
                 onHandleLChange(newMs)
-            }
-        )
+            })
 
         HandleBar(
             positionMs = handleRMs,
@@ -216,11 +233,12 @@ fun RangeOverlay(
             totalWidthPx = totalWidthPx,
             isLeft = false,
             onDrag = { deltaPx ->
-                val newMs = (handleRMs + (deltaPx / totalWidthPx * totalDurationMs).toLong())
-                    .coerceIn(handleLMs + minGapMs, totalDurationMs)
+                val newMs =
+                    (handleRMs + (deltaPx / totalWidthPx * totalDurationMs).toLong()).coerceIn(
+                        handleLMs + minGapMs, totalDurationMs
+                    )
                 onHandleRChange(newMs)
-            }
-        )
+            })
     }
 }
 
@@ -237,27 +255,24 @@ fun HandleBar(
 
     val handleTouchWidthPx = with(density) { handleTouchWidthDp.toPx() }
 
-    val offsetPx = if (totalWidthPx > 0f)
-        (positionMs / totalDurationMs.toFloat() * totalWidthPx) else 0f
+    val offsetPx =
+        if (totalWidthPx > 0f) (positionMs / totalDurationMs.toFloat() * totalWidthPx) else 0f
 
     val currentOnDrag by rememberUpdatedState(onDrag)
 
-    Box(
-        modifier = Modifier
-            .offset { IntOffset((offsetPx - handleTouchWidthPx / 2).toInt(), 0) }
-            .width(handleTouchWidthDp)
-            .fillMaxHeight()
-            .pointerInput(Unit) {
-                detectDragGestures { _, dragAmount ->
-                    currentOnDrag(dragAmount.x)
-                }
+    Box(modifier = Modifier
+        .offset { IntOffset((offsetPx - handleTouchWidthPx / 2).toInt(), 0) }
+        .width(handleTouchWidthDp)
+        .fillMaxHeight()
+        .pointerInput(Unit) {
+            detectDragGestures { _, dragAmount ->
+                currentOnDrag(dragAmount.x)
             }
-    ) {
+        }) {
         val resId = if (isLeft) R.drawable.ic_indicator_right else R.drawable.ic_indicator_left
 
         Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (isLeft) {
                 Box(

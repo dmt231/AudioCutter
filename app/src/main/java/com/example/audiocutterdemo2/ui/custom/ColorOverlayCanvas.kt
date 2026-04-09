@@ -17,8 +17,8 @@ fun ColorOverlayCanvas(
     trimMode: TrimMode,
     modifier: Modifier = Modifier
 ) {
-    val keepColor  = Color(0xFFB89FFF).copy(alpha = 0f)         // trong suốt = vùng keep
-    val dimColor   = Color(0xFF000000).copy(alpha = 0.55f)      // tối = vùng cut
+    val keepColor  = Color(0xFFB89FFF).copy(alpha = 0f)
+    val dimColor   = Color(0xFF000000).copy(alpha = 0.55f)
 
     Canvas(modifier = modifier.fillMaxSize()) {
         val leftPx  = handleLMs / totalDurationMs.toFloat() * size.width
@@ -26,14 +26,11 @@ fun ColorOverlayCanvas(
 
         when (trimMode) {
             TrimMode.TRIM_SIDE -> {
-                // Tô mờ vùng trái
                 drawRect(
                     color   = dimColor,
                     topLeft = Offset(0f, 0f),
                     size    = Size(leftPx, size.height)
                 )
-                // Vùng giữa: trong suốt (không vẽ gì)
-                // Tô mờ vùng phải
                 drawRect(
                     color   = dimColor,
                     topLeft = Offset(rightPx, 0f),
@@ -41,14 +38,11 @@ fun ColorOverlayCanvas(
                 )
             }
             TrimMode.TRIM_MIDDLE -> {
-                // Vùng trái: trong suốt
-                // Tô mờ vùng giữa
                 drawRect(
                     color   = dimColor,
                     topLeft = Offset(leftPx, 0f),
                     size    = Size(rightPx - leftPx, size.height)
                 )
-                // Vùng phải: trong suốt
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.example.audiocutterdemo2.ui.main
 
+import android.app.Application
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
@@ -7,34 +8,51 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.net.toUri
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import com.example.audiocutterdemo.core.ffmpeg.FFMpegController
+import com.example.audiocutterdemo.core.ffmpeg.model.AudioCut
 import com.example.audiocutterdemo.core.file_manager.IFileManager
 import com.example.audiocutterdemo2.core.file_manager.data.AudioFile
 import com.example.audiocutterdemo2.core.ffmpeg.DecoderManager
 import com.example.audiocutterdemo2.core.file_manager.data.TrimMode
 import com.example.audiocutterdemo2.permission.PermissionChecker
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class MainViewModel(
+    application: Application,
     private val fileManager: IFileManager,
     private val decoderManager: DecoderManager,
     private val permissionChecker: PermissionChecker,
-) : ViewModel() {
+    private val ffMpegController: FFMpegController,
+) : AndroidViewModel(application) {
+
     private val _selectedFile = MutableStateFlow<AudioFile?>(null)
     val selectedFile = _selectedFile.asStateFlow()
 
     private val _amplitudes = MutableStateFlow<List<Int>>(emptyList())
     val amplitudes = _amplitudes.asStateFlow()
 
-    var isDecoding  by mutableStateOf(false)
-    var handleLMs   by mutableLongStateOf(0L)
-    var handleRMs   by mutableLongStateOf(0L)
-    var trimMode    by mutableStateOf(TrimMode.TRIM_SIDE)
+    var currentPlaybackMs by mutableLongStateOf(0L)
+    var isPlaying by mutableStateOf(false)
+
+    private var playbackJob: Job? = null
+
+    private val exoPlayer: ExoPlayer = ExoPlayer.Builder(application).build()
+
+    var isDecoding by mutableStateOf(false)
+    var handleLMs by mutableLongStateOf(0L)
+    var handleRMs by mutableLongStateOf(0L)
+    var trimMode by mutableStateOf(TrimMode.TRIM_SIDE)
 
     private val _navigationEvent = Channel<Boolean>(Channel.BUFFERED)
     val navigationEvent = _navigationEvent.receiveAsFlow()
@@ -49,21 +67,47 @@ class MainViewModel(
                     val validIntAmps = framesFloat
                         .filter { it >= 0f }
                         .map { it.toInt() }
-
                     _amplitudes.value = validIntAmps
                 }
             }
         }
     }
 
+    fun togglePlayPause() {
+        if (isPlaying) pauseAudio() else playAudio()
+    }
+
+    private fun playAudio() {
+        if (exoPlayer.playbackState == ExoPlayer.STATE_ENDED) {
+            exoPlayer.seekTo(0)
+        }
+        exoPlayer.play()
+        isPlaying = true
+        startPositionTracker()
+    }
+
+    private fun startPositionTracker() {
+        playbackJob?.cancel()
+        playbackJob = viewModelScope.launch {
+            while (isActive && isPlaying) {
+                currentPlaybackMs = exoPlayer.currentPosition
+                delay(16)
+            }
+        }
+    }
+
+    fun pauseAudio() {
+        exoPlayer.pause()
+        isPlaying = false
+        playbackJob?.cancel()
+    }
+
     fun onPickFileClick() {
         viewModelScope.launch {
             val requiredPermission = permissionChecker.getRequiredAudioPermission()
             if (permissionChecker.hasAudioPermission()) {
-                Log.d("mtd", "onPickFileClick: have permission")
                 _navigationEvent.send(true)
             } else {
-                Log.d("mtd", "onPickFileClick: not have permission")
                 _permissionRequestEvent.send(requiredPermission)
             }
         }
@@ -82,17 +126,22 @@ class MainViewModel(
             val resultFiles = fileManager.pickFiles(activity, isMultiple = false)
             if (resultFiles.isEmpty()) return@launch
 
-            val uri  = resultFiles.first().uri
+            val uri = resultFiles.first().uri
             val audioFile = fileManager.getAudioFile(uri) ?: return@launch
 
             _selectedFile.value = audioFile
-            handleLMs  = 0L
-            handleRMs  = audioFile.duration
+            handleLMs = 0L
+            handleRMs = audioFile.duration
             isDecoding = true
             _amplitudes.value = emptyList()
 
-            val inputStream = activity.contentResolver.openInputStream(uri.toUri())
+            exoPlayer.apply {
+                setMediaItem(MediaItem.fromUri(uri))
+                prepare()
+                seekTo(0)
+            }
 
+            val inputStream = activity.contentResolver.openInputStream(uri.toUri())
             if (inputStream != null) {
                 try {
                     decoderManager.loadFramesWithInputStream(
@@ -107,5 +156,24 @@ class MainViewModel(
             }
             isDecoding = false
         }
+    }
+
+    fun confirmCut(){
+        val file = _selectedFile.value ?: return
+        val splits = when(trimMode){
+            TrimMode.TRIM_SIDE -> listOf(
+                AudioCut(handleLMs, handleRMs)
+            )
+            TrimMode.TRIM_MIDDLE -> listOf(
+                AudioCut(0, handleLMs),
+                AudioCut(handleRMs, file.duration)
+            )
+        }
+        //ffmpeg cut here
+    }
+
+    override fun onCleared() {
+        exoPlayer.release()
+        super.onCleared()
     }
 }

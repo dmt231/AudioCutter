@@ -1,13 +1,11 @@
 package com.example.audiocutterdemo2.ui.main
 
-import android.os.Build
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,21 +18,21 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.flowWithLifecycle
+import com.example.audiocutterdemo2.R
 import com.example.audiocutterdemo2.core.file_manager.data.TrimMode
 import com.example.audiocutterdemo2.ui.screen.WaveformRangeSelector
-import com.example.audiocutterdemo2.ui.theme.Purple40
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
@@ -53,7 +51,6 @@ fun MainScreen(viewModel: MainViewModel = koinViewModel()) {
 
     LaunchedEffect(Unit) {
         viewModel.permissionRequestEvent.collect { permission ->
-            Log.d("mtd", "MainScreen: collect permission request")
             permissionLauncher.launch(permission)
         }
     }
@@ -83,26 +80,9 @@ fun MainScreen(viewModel: MainViewModel = koinViewModel()) {
         } else {
             Text(
                 text = selectedFile!!.name,
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White
             )
-
-            Spacer(Modifier.height(24.dp))
-
-            if (viewModel.isDecoding) {
-                CircularProgressIndicator()
-            } else if (amplitudes.isNotEmpty()) {
-                WaveformRangeSelector(
-                    amplitudes = amplitudes,
-                    totalDurationMs = selectedFile!!.duration,
-                    handleLMs = viewModel.handleLMs,
-                    handleRMs = viewModel.handleRMs,
-                    trimMode = viewModel.trimMode,
-                    onHandleLChange = { viewModel.handleLMs = it },
-                    onHandleRChange = { viewModel.handleRMs = it }
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
@@ -117,11 +97,42 @@ fun MainScreen(viewModel: MainViewModel = koinViewModel()) {
                 )
             }
 
+            Spacer(Modifier.height(24.dp))
+
+            if (viewModel.isDecoding) {
+                CircularProgressIndicator()
+            } else if (amplitudes.isNotEmpty()) {
+                WaveformRangeSelector(
+                    amplitudes = amplitudes,
+                    totalDurationMs = selectedFile!!.duration,
+                    handleLMs = viewModel.handleLMs,
+                    handleRMs = viewModel.handleRMs,
+                    trimMode = viewModel.trimMode,
+                    currentPlaybackMs = viewModel.currentPlaybackMs,
+                    onHandleLChange = { viewModel.handleLMs = it },
+                    onHandleRChange = { viewModel.handleRMs = it }
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            //Play Audio Controller
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Image(
+                    modifier = Modifier.clickable{
+                        viewModel.togglePlayPause()
+                    },
+                    painter = painterResource(if (viewModel.isPlaying) R.drawable.ic_pause else R.drawable.ic_play),
+                    contentDescription = null
+                )
+            }
+
             Spacer(Modifier.height(16.dp))
 
             Button(onClick = {
                 //TODO
-                Log.d("mtd", "MainScreen: leftStart : ${viewModel.handleLMs} endTime : ${viewModel.handleRMs}")
+                viewModel.confirmCut()
             }) {
                 Text("Confirm")
             }
