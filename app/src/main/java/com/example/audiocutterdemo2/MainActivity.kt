@@ -16,7 +16,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.example.audiocutterdemo2.ui.main.MainScreen
+import com.example.audiocutterdemo2.ui.screen.main.MainScreen
 import com.example.audiocutterdemo2.ui.theme.AudioCutterDemo2Theme
 
 class MainActivity : ComponentActivity() {

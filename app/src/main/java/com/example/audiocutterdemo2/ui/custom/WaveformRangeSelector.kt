@@ -1,4 +1,4 @@
-package com.example.audiocutterdemo2.ui.screen
+package com.example.audiocutterdemo2.ui.custom
 
 import android.util.Log
 import androidx.compose.animation.core.tween
@@ -15,7 +15,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
@@ -26,8 +25,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.audiocutterdemo2.R
 import com.example.audiocutterdemo2.core.file_manager.data.TrimMode
-import com.example.audiocutterdemo2.ui.custom.AudioWaveform
-import com.example.audiocutterdemo2.ui.custom.ColorOverlayCanvas
+import com.example.audiocutterdemo2.ui.screen.main.data.ZoomLevel
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -38,14 +36,21 @@ fun WaveformRangeSelector(
     handleLMs: Long,
     handleRMs: Long,
     trimMode: TrimMode,
+    zoomLevel: ZoomLevel,
     currentPlaybackMs: Long?,
     onHandleLChange: (Long) -> Unit,
     onHandleRChange: (Long) -> Unit,
+    onSeek: (Long) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (amplitudes.isEmpty() || totalDurationMs == 0L) return
 
-    var zoomScale by remember { mutableFloatStateOf(1f) }
+    val zoomScale = when (zoomLevel) {
+        ZoomLevel.Small -> 1f
+        ZoomLevel.Medium -> 2.5f
+        ZoomLevel.Big -> 5f
+    }
+
     val scrollState = rememberScrollState()
     var containerWidthPx by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
@@ -55,11 +60,32 @@ fun WaveformRangeSelector(
     }
     val waveformWidthDp = screenWidthDp * zoomScale
 
+    val widthSpikesValue = when (zoomLevel) {
+        ZoomLevel.Small -> 3.dp
+        ZoomLevel.Medium -> 8.dp
+        ZoomLevel.Big -> 10.dp
+    }
+
+    val paddingSpikesValue = when (zoomLevel) {
+        ZoomLevel.Small -> 2.5.dp
+        ZoomLevel.Medium -> 6.67.dp
+        ZoomLevel.Big -> 17.5.dp
+    }
+
     val staticBrush = remember {
         SolidColor(Color(0xFFB89FFF))
     }
 
     var totalWidthPx by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(totalWidthPx) {
+        if (totalWidthPx <= 0f) return@LaunchedEffect
+        val handleLRatio = handleLMs / totalDurationMs.toFloat()
+        val viewportPx = totalWidthPx / zoomScale
+        val targetScroll = (handleLRatio * totalWidthPx - viewportPx / 2f)
+            .coerceAtLeast(0f).toInt()
+        scrollState.scrollTo(targetScroll)
+    }
 
     Column(modifier = modifier.fillMaxWidth()) {
         // Header time
@@ -90,12 +116,7 @@ fun WaveformRangeSelector(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(150.dp)
-                .onSizeChanged { containerWidthPx = it.width.toFloat() }
-                .pointerInput(Unit) {
-                    detectTransformGestures { _, _, zoom, _ ->
-                        zoomScale = (zoomScale * zoom).coerceIn(1f, 8f)
-                    }
-                }) {
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
@@ -108,8 +129,9 @@ fun WaveformRangeSelector(
                     modifier = Modifier
                         .width(waveformWidthDp)
                         .fillMaxHeight()
-                        .onSizeChanged { totalWidthPx = it.width.toFloat() },
-                    contentAlignment = Alignment.CenterStart
+                        .onSizeChanged {
+                            totalWidthPx = it.width.toFloat()
+                        }, contentAlignment = Alignment.CenterStart
                 ) {
 
                     key(amplitudes) {
@@ -121,8 +143,8 @@ fun WaveformRangeSelector(
                             progress = 0f,
                             onProgressChange = {},
                             waveformBrush = staticBrush,
-                            spikePadding = 3.dp,
-                            spikeWidth = if (zoomScale > 2f) 4.dp else 2.dp,
+                            spikePadding = paddingSpikesValue,
+                            spikeWidth = widthSpikesValue,
                             spikeRadius = 1.dp,
                             spikeAnimationSpec = tween(durationMillis = 0)
                         )
@@ -142,13 +164,15 @@ fun WaveformRangeSelector(
                         PlaybackIndicator(
                             positionMs = currentPlaybackMs,
                             totalDurationMs = totalDurationMs,
-                            totalWidthPx = totalWidthPx
+                            totalWidthPx = totalWidthPx,
+                            onSeek = onSeek
                         )
                     }
 
                     RangeOverlay(
                         modifier = Modifier.fillMaxSize(),
                         totalDurationMs = totalDurationMs,
+                        totalWidthPx = totalWidthPx,
                         handleLMs = handleLMs,
                         handleRMs = handleRMs,
                         onHandleLChange = onHandleLChange,
@@ -172,20 +196,19 @@ private fun formatTimeMs(ms: Long): String {
 @Composable
 fun RangeOverlay(
     totalDurationMs: Long,
+    totalWidthPx: Float,
     handleLMs: Long,
     handleRMs: Long,
     onHandleLChange: (Long) -> Unit,
     onHandleRChange: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var totalWidthPx by remember { mutableFloatStateOf(0f) }
     val minGapMs = 500L
 
     val selectedOverlayColor = Color.Transparent
     val unselectedOverlayColor = Color.Transparent
 
-    Box(
-        modifier = modifier.onSizeChanged { totalWidthPx = it.width.toFloat() }) {
+    Box(modifier = modifier) {
         if (totalWidthPx > 0f) {
             val leftPx = (handleLMs / totalDurationMs.toFloat()) * totalWidthPx
             val rightPx = (handleRMs / totalDurationMs.toFloat()) * totalWidthPx

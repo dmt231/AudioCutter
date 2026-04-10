@@ -1,4 +1,4 @@
-package com.example.audiocutterdemo2.ui.main
+package com.example.audiocutterdemo2.ui.screen.main
 
 import android.app.Application
 import android.util.Log
@@ -19,6 +19,7 @@ import com.example.audiocutterdemo2.core.file_manager.data.AudioFile
 import com.example.audiocutterdemo2.core.ffmpeg.DecoderManager
 import com.example.audiocutterdemo2.core.file_manager.data.TrimMode
 import com.example.audiocutterdemo2.permission.PermissionChecker
+import com.example.audiocutterdemo2.ui.screen.main.data.ZoomLevel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -60,6 +61,10 @@ class MainViewModel(
     private val _permissionRequestEvent = Channel<String>(Channel.BUFFERED)
     val permissionRequestEvent = _permissionRequestEvent.receiveAsFlow()
 
+    //Zoom state
+    private val _zoomState = MutableStateFlow<ZoomLevel>(ZoomLevel.Small)
+    val zoomState = _zoomState.asStateFlow()
+
     init {
         viewModelScope.launch {
             decoderManager.frames.collect { framesFloat ->
@@ -77,29 +82,15 @@ class MainViewModel(
         if (isPlaying) pauseAudio() else playAudio()
     }
 
-    private fun playAudio() {
-        if (exoPlayer.playbackState == ExoPlayer.STATE_ENDED) {
-            exoPlayer.seekTo(0)
-        }
-        exoPlayer.play()
-        isPlaying = true
-        startPositionTracker()
-    }
-
-    private fun startPositionTracker() {
-        playbackJob?.cancel()
-        playbackJob = viewModelScope.launch {
-            while (isActive && isPlaying) {
-                currentPlaybackMs = exoPlayer.currentPosition
-                delay(16)
-            }
-        }
-    }
-
     fun pauseAudio() {
         exoPlayer.pause()
         isPlaying = false
         playbackJob?.cancel()
+    }
+
+    fun seekTo(positionMs: Long) {
+        exoPlayer.seekTo(positionMs)
+        currentPlaybackMs = positionMs
     }
 
     fun onPickFileClick() {
@@ -170,6 +161,51 @@ class MainViewModel(
             )
         }
         //ffmpeg cut here
+    }
+
+    fun zoomIn(){
+        var currentValue = _zoomState.value
+        if(currentValue == ZoomLevel.Big) return
+        when(currentValue){
+            ZoomLevel.Small -> currentValue = ZoomLevel.Medium
+            ZoomLevel.Medium -> currentValue = ZoomLevel.Big
+            else -> {}
+        }
+        updateState(currentValue)
+    }
+
+    fun zoomOut(){
+        var currentValue = _zoomState.value
+        if(currentValue == ZoomLevel.Small) return
+        when(currentValue){
+            ZoomLevel.Big -> currentValue = ZoomLevel.Medium
+            ZoomLevel.Medium -> currentValue = ZoomLevel.Small
+            else -> {}
+        }
+        updateState(currentValue)
+    }
+
+    private fun playAudio() {
+        if (exoPlayer.playbackState == ExoPlayer.STATE_ENDED) {
+            exoPlayer.seekTo(0)
+        }
+        exoPlayer.play()
+        isPlaying = true
+        startPositionTracker()
+    }
+
+    private fun startPositionTracker() {
+        playbackJob?.cancel()
+        playbackJob = viewModelScope.launch {
+            while (isActive && isPlaying) {
+                currentPlaybackMs = exoPlayer.currentPosition
+                delay(16)
+            }
+        }
+    }
+
+    private fun updateState(zoomLevel: ZoomLevel){
+        _zoomState.value = zoomLevel
     }
 
     override fun onCleared() {

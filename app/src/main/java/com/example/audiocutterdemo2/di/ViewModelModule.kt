@@ -1,6 +1,6 @@
 package com.example.audiocutterdemo2.di
 
-import com.example.audiocutterdemo2.ui.main.MainViewModel
+import com.example.audiocutterdemo2.ui.screen.main.MainViewModel
 import org.koin.dsl.module
 
 val viewModelModule = module {

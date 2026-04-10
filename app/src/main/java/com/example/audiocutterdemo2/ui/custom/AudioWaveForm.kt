@@ -35,7 +35,7 @@ import kotlin.math.roundToInt
 private val MinSpikeWidthDp: Dp = 1.dp
 private val MaxSpikeWidthDp: Dp = 24.dp
 private val MinSpikePaddingDp: Dp = 0.dp
-private val MaxSpikePaddingDp: Dp = 12.dp
+private val MaxSpikePaddingDp: Dp = 24.dp
 private val MinSpikeRadiusDp: Dp = 0.dp
 private val MaxSpikeRadiusDp: Dp = 12.dp
 
