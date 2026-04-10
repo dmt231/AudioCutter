@@ -40,7 +40,7 @@ fun PlaybackIndicator(
             .offset { IntOffset((offsetPx - with(density) { touchWidthDp.toPx() } / 2).toInt(), 0) }
             .width(touchWidthDp)
             .fillMaxHeight()
-            .pointerInput(Unit) {
+            .pointerInput(totalWidthPx) {
                 detectDragGestures { _, dragAmount ->
                     if (totalWidthPx <= 0f) return@detectDragGestures
                     val newMs = (currentPositionMs + (dragAmount.x / totalWidthPx * totalDurationMs).toLong())
